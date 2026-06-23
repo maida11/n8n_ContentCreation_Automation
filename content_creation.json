@@ -1,0 +1,423 @@
+{
+  "name": "content_creation",
+  "nodes": [
+    {
+      "parameters": {
+        "url": "={{ $json.body.url }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        208,
+        0
+      ],
+      "id": "30d8daa7-e882-4b96-b7f0-9d40bbe843dd",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "apiUrl": "={{ $('Webhook').item.json.body.url }}",
+        "apiOptionalParameters": {
+          "apiOutputFormat": "markdown"
+        }
+      },
+      "type": "n8n-nodes-scraperapi-official.scraperApi",
+      "typeVersion": 1,
+      "position": [
+        416,
+        0
+      ],
+      "id": "dc4937e9-cdc5-4378-ae9f-182cdbbdf30e",
+      "name": "Send a request to the API",
+      "credentials": {
+        "scraperApi-Api": {
+          "id": "xP3L9x7TLduwJPcW",
+          "name": "ScraperAPI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nfunction cleanScrapedContent(raw) {\n  if (typeof raw !== 'string') return ''; // guard so a bad/missing item doesn't crash the node\n\n  let text = raw;\n  text = text.replace(/<[^>]+>/g, ' ');\n  text = text.replace(/!\\[[^\\]]*\\]\\([^)]*\\)/g, '');\n  text = text.replace(/\\[([^\\]]*)\\]\\([^)]*\\)/g, '$1');\n\n  const noisePatterns = [\n    /skip to content/i, /navigation menu/i, /^\\*?\\s*close$/i,\n    /^\\*?\\s*login$/i, /^\\*?\\s*search$/i, /^\\*?\\s*cart$/i,\n    /add to cart/i, /choose options/i, /sale price/i,\n    /rated [\\d.]+ out of 5 stars/i, /^\\d+ reviews?$/i,\n    /\\(USD \\$\\)/, /sign up for (special offers|newsletter)/i,\n    /^©/, /^\\*?\\s*best seller$/i, /^\\*?\\s*new$/i,\n    /^\\d+(\\.\\d+)?$/, /&nbsp;?/i, /accept cookies|we use cookies/i,\n    /all rights reserved/i,\n  ];\n\n  const seen = new Set();\n  const kept = [];\n\n  for (const rawLine of text.split('\\n')) {\n    const line = rawLine.trim();\n    if (!line) continue;\n    if (noisePatterns.some(p => p.test(line))) continue;\n    if (seen.has(line)) continue;\n    seen.add(line);\n    kept.push(line);\n  }\n\n  return kept.join('\\n').replace(/[ \\t]+/g, ' ').trim();\n}\n\nreturn $input.all().map(item => ({\n  json: {\n    ...item.json,\n    chatInput: cleanScrapedContent(item.json.response.body),\n  },\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        624,
+        0
+      ],
+      "id": "ea340b3b-61a2-481d-be6e-1ae32422c07a",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "model": "llama-3.3-70b-versatile",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        832,
+        208
+      ],
+      "id": "91b47254-c848-435e-9d55-faddd31e6a2a",
+      "name": "Groq Chat Model",
+      "credentials": {
+        "groqApi": {
+          "id": "kyDCjhFK5XOgW6fu",
+          "name": "Groq account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.text }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "You are a formatting and structuring engine for TikTok video scripts. You receive one raw 20–30 second script already written by a previous step. Clean it up and reorganize it into the exact JSON structure below — do not invent new product claims or change the core content.  1. SCRIPT: Keep the existing shots in order. Strip all asterisks, markdown, smart quotes, emoji (unless meant to appear on-screen), and meta-commentary. Keep it tight — this is a 20–30 second video, not a full ad.  2. HASHTAGS: Generate 8–12 hashtags relevant to this specific product/niche, optimized for TikTok discoverability. Mix broad reach, niche/product-specific, and 1–2 general virality tags. Each starts with # and has no spaces.  3. HOOKS: Write exactly 5 alternative opening lines, different from the script's current opening, ranked strongest first. Each is one sentence, under 20 words, written to stop someone mid-scroll. No numbering or quotation marks in the text itself.  CRITICAL OUTPUT RULES: - Output exactly ONE JSON object. Never split your answer into multiple sections or multiple JSON blocks. - Never use markdown headers (###), bold (**), or code fences (```) anywhere in your response. - The only top-level keys allowed are: \"script\", \"hashtags\", \"hooks\" — not \"shots\", not separate objects per section. - Your entire response must start with { and end with }. Nothing else before or after.  CORRECT shape (structure only — yours will have real content): {   \"script\": [     {\"shot\": 1, \"label\": \"Hook\", \"text\": \"...\"},     {\"shot\": 2, \"label\": \"Problem\", \"text\": \"...\"}   ],   \"hashtags\": [\"#tag1\", \"#tag2\"],   \"hooks\": [\"hook line one\", \"hook line two\"] }  WRONG shape — do not do this: ### 1. SCRIPT ```json { \"shots\": [...] } ``` ### 2. HASHTAGS ```json { \"hashtags\": [...] } ``` This is wrong: it splits the answer into sections with separate JSON blocks and uses the wrong key name. There is only one JSON object with all three keys inside it."
+            }
+          ]
+        },
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        1184,
+        0
+      ],
+      "id": "05a0a95d-d977-4fad-a61e-f4753c5df11d",
+      "name": "Basic LLM Chain1"
+    },
+    {
+      "parameters": {
+        "model": "llama-3.3-70b-versatile",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        1184,
+        208
+      ],
+      "id": "9ea54737-ad3c-4d64-b9d8-509c8058de20",
+      "name": "Groq Chat Model1",
+      "credentials": {
+        "groqApi": {
+          "id": "kyDCjhFK5XOgW6fu",
+          "name": "Groq account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "55395ff3-de44-4fa3-b911-ee6dba8df172",
+        "responseMode": "responseNode",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin: *",
+                "value": "Access-Control-Allow-Origin: *"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        16,
+        0
+      ],
+      "id": "a2116600-ff67-43ba-8ede-8a77d5167137",
+      "name": "Webhook",
+      "webhookId": "55395ff3-de44-4fa3-b911-ee6dba8df172"
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin: *",
+                "value": "Access-Control-Allow-Origin: *"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        2448,
+        -32
+      ],
+      "id": "4e6b3442-e249-46c4-b749-686e30b0abf1",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "messages": {
+          "messageValues": [
+            {
+              "message": "You are an expert short-form video scriptwriter for TikTok, Instagram Reels, and YouTube Shorts. You will be given a topic, an article, a concept, or a set of notes. Write a complete, ready-to-shoot video script for a 60–90 SECOND video that hooks the viewer and delivers engaging, high-retention content based strictly on the provided input. Do not invent facts outside the scope of the provided information, but adapt it creatively for a video format.\n\nStructure the script as a sequence of 6 to 8 shots in this loose format:\nShot 1: [Hook] <spoken/on-screen text>\nShot 2: [Context / The Setup] <spoken/on-screen text>\nShot 3: [Core Idea 1 / The \"Aha\" Moment] <spoken/on-screen text>\nShot 4: [Core Idea 2 / Deep Dive] <spoken/on-screen text>\nShot 5: [Core Idea 3 / Real-World Example] <spoken/on-screen text>\nShot 6: [The Twist / Pro-Tip / Key Takeaway] <spoken/on-screen text>\nShot 7: [Call to Action / Engagement Prompt] <spoken/on-screen text>\n\nGuidelines:\n\nUse 6–8 shots total. Ensure the pacing keeps the whole script between 60–90 seconds of spoken time (~180–250 words total).\n\nEach shot's spoken text should be conversational and flow seamlessly into the next beat.\n\nWrite like a real person talking to the camera: casual, direct, engaging, and free of stiff corporate language or unnatural excitement.\n\nOpen with a scroll-stopping hook that uses a curiosity gap, a bold statement, or a highly relatable scenario relevant to the input—never a generic \"Hey guys.\"\n\nAdapt seamlessly to the tone of the provided content (e.g., informative, entertaining, persuasive, or narrative).\n\nDo not include hashtags, alternate hooks, captions, or meta-commentary. Just output the shot-by-shot script.\n\nStart directly with \"Shot 1:\" — no preamble or introductory text."
+            }
+          ]
+        },
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        832,
+        0
+      ],
+      "id": "0962e6d4-839b-4cd8-bfd0-3176bfd1f5c6",
+      "name": "Basic LLM Chain",
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json.text; // adjust field name to match your chain's actual output key\n\n// strip markdown fences if the model added them anyway\nconst cleaned = raw.replace(/^```json\\s*/i, '').replace(/```\\s*$/i, '').trim();\n\nlet parsed;\ntry {\n  parsed = JSON.parse(cleaned);\n} catch (e) {\n  // fallback shape so the workflow never breaks\n  parsed = { script: [], hashtags: [], hooks: [], error: true, raw };\n}\n\nreturn [{ json: parsed }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1536,
+        0
+      ],
+      "id": "c77c9fa4-0400-4654-941d-920682b13fb3",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://qwen-qwen-tts-demo.hf.space/gradio_api/call/predict",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"data\": [\n    \"{{ $json.script.map(s => s.text).join(' ') }}\",\n    \"Cherry\"\n  ]\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1744,
+        0
+      ],
+      "id": "8e0b3ab3-ecf9-4ff3-b1a7-21304469d01e",
+      "name": "HTTP Request1"
+    },
+    {
+      "parameters": {
+        "url": "=https://qwen-qwen-tts-demo.hf.space/gradio_api/call/predict/{{ $json.event_id }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1952,
+        0
+      ],
+      "id": "0037459a-6f38-4c99-a467-0f7b376870df",
+      "name": "HTTP Request2"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        2000,
+        400
+      ],
+      "id": "92a1a7ee-c599-4b50-a84f-f07578f08fe5",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $json.data;\n\nconst match = raw.match(\n  /event:\\s*complete\\s*data:\\s*(\\[[\\s\\S]*\\])/m\n);\n\nlet audioUrl = null;\n\nif (match) {\n  try {\n    const files = JSON.parse(match[1]);\n    audioUrl = files?.[0]?.url || null;\n  } catch (err) {\n    console.error(err);\n  }\n}\n\nreturn [\n  {\n    json: {\n      audioUrl\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2160,
+        0
+      ],
+      "id": "65d4c916-fe06-4115-8dd1-59fedc6d8fb5",
+      "name": "Code in JavaScript2"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Send a request to the API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a request to the API": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Basic LLM Chain1",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Basic LLM Chain1": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond to Webhook": {
+      "main": [
+        []
+      ]
+    },
+    "Basic LLM Chain": {
+      "main": [
+        [
+          {
+            "node": "Basic LLM Chain1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "HTTP Request1": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request2": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript2": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "cb310fc7-035f-4da9-b9ff-4a326d0335bb",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "7f5e861d4fcb1d7455cfbd83f5d5c5bfbff3cea10865c4af225b1558d043d8d5"
+  },
+  "id": "gZpAM9HvpCP2QMJD",
+  "tags": []
+}
